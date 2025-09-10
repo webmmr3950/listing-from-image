@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Google Cloud credentials
+*.json
+image-business-listing-*.json
+google-credentials*.json
+
+# Environment files
+.env.local
+.env
