@@ -183,20 +183,41 @@ const FileUpload: React.FC<FileUploadProps> = ({
                     <p className="text-xl font-semibold text-gray-700 mb-3">
                       Drop your business image here
                     </p>
-                    <p className="text-gray-500 mb-3">
+                    <p className="text-gray-500">
                       or click to browse (PNG, JPG, WEBP up to 5MB)
-                    </p>
-                    <p className="text-gray-600 italic">
-                      * Please upload a clear image for better result! *
                     </p>
                   </label>
                 )}
               </div>
 
+              {/* Sample Image Example */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center space-x-4">
+                  <div className="flex-shrink-0">
+                    <Image 
+                      src="/sample.png" 
+                      alt="Sample business image showing clear text" 
+                      width={120} 
+                      height={90} 
+                      className="rounded-lg border border-gray-200 shadow-sm"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-blue-800 mb-1">
+                      💡 Example of a Good Image
+                    </h4>
+                    <p className="text-sm text-blue-700">
+                      Clear, well-lit photos with readable text work best. Avoid blurry images, 
+                      extreme angles, or poor lighting for optimal results.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <Button
                 onClick={onProcess}
                 disabled={!selectedFile}
-                className="w-full py-6 text-lg font-semibold bg-black hover:bg-gray-800 disabled:bg-gray-400 disabled:text-gray-600 transition-all duration-300 transform hover:scale-[1.02]"
+                className="w-full py-6 text-lg font-semibold bg-black hover:bg-gray-800 disabled:bg-gray-400 disabled:text-gray-600"
                 size="lg"
               >
                 Generate from Image
@@ -249,7 +270,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
             </>
           )}
 
-          <Separator className="my-6" />
+          {/* <Separator className="my-6" /> */}
 
           <div className="text-center">
             <p className="text-sm text-gray-500">
