@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/components/BusinessListingGenerator.tsx
 'use client';
 
@@ -7,8 +8,25 @@ import ProcessingView from './ProcessingView';
 import BusinessNameConfirmation from './BusinessNameConfirmation';
 import { BusinessData, CurrentStep, ProcessingStep } from '@/lib/ui-types';
 import BusinessResults from './BusinessResult';
+import LocationSelector from './LocationSelector';
 
-type ExtendedStep = CurrentStep | 'confirmation';
+type ExtendedStep = CurrentStep | 'confirmation' | 'location-selection';
+
+interface LocationOption {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+  rating?: number;
+  user_ratings_total?: number;
+  business_status?: string;
+  types?: string[];
+  geometry?: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+}
 
 interface ExtractedTextData {
   businessNames: string[];
@@ -24,6 +42,19 @@ interface ExtractedTextData {
   };
 }
 
+interface ProcessBusinessResponse {
+  success: boolean;
+  businessData: BusinessData;
+  hasMultipleLocations: boolean;
+  locationOptions?: LocationOption[];
+  metadata: {
+    processed_at: string;
+    sources_used: string[];
+    confidence: string;
+    multipleLocationsCount?: number;
+  };
+}
+
 const BusinessListingGenerator: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<ExtendedStep>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -31,6 +62,7 @@ const BusinessListingGenerator: React.FC = () => {
   const [businessData, setBusinessData] = useState<BusinessData | null>(null);
   const [extractedTextData, setExtractedTextData] = useState<ExtractedTextData | null>(null);
   const [confirmedBusinessName, setConfirmedBusinessName] = useState<string>('');
+  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const processingSteps: ProcessingStep[] = [
@@ -138,19 +170,31 @@ const BusinessListingGenerator: React.FC = () => {
     }
   };
 
-  const continueProcessing = async (textData: ExtractedTextData, businessName: string): Promise<void> => {
+  const continueProcessing = async (
+    textData: ExtractedTextData, 
+    businessName: string, 
+    selectedLocation?: LocationOption
+  ): Promise<void> => {
     try {
       // Step 2: Process business information
       setProcessingProgress(66);
+      
+      const requestBody: any = {
+        extractedText: {
+          ...textData,
+          businessNames: [businessName, ...textData.businessNames.filter(name => name !== businessName)]
+        }
+      };
+
+      // Include selected location if provided
+      if (selectedLocation) {
+        requestBody.selectedLocation = selectedLocation;
+      }
+
       const processResponse = await fetch('/api/process-business', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          extractedText: {
-            ...textData,
-            businessNames: [businessName, ...textData.businessNames.filter(name => name !== businessName)]
-          }
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!processResponse.ok) {
@@ -158,9 +202,19 @@ const BusinessListingGenerator: React.FC = () => {
         throw new Error(errorData.error || 'Failed to process business information');
       }
 
-      const result = await processResponse.json();
+      const result: ProcessBusinessResponse = await processResponse.json();
 
-      // Step 3: Complete
+      // Check if multiple locations were found and we haven't selected one yet
+      if (result.hasMultipleLocations && !selectedLocation && result.locationOptions) {
+        console.log(`Found ${result.locationOptions.length} location options`);
+        setLocationOptions(result.locationOptions);
+        setBusinessData(result.businessData); // Store fallback business data
+        setCurrentStep('location-selection');
+        setProcessingProgress(0);
+        return;
+      }
+
+      // Step 3: Complete processing
       setProcessingProgress(100);
       await new Promise<void>(resolve => setTimeout(resolve, 500));
 
@@ -173,10 +227,50 @@ const BusinessListingGenerator: React.FC = () => {
     }
   };
 
+  const handleLocationSelection = async (selectedLocation: LocationOption): Promise<void> => {
+    if (!extractedTextData) return;
+
+    console.log('User selected location:', selectedLocation.name, selectedLocation.formatted_address);
+    
+    setCurrentStep('processing');
+    setProcessingProgress(50); // Start at 50% since we already did text extraction
+    
+    try {
+      const businessName = confirmedBusinessName || extractedTextData.businessNames[0];
+      await continueProcessing(extractedTextData, businessName, selectedLocation);
+    } catch (err) {
+      console.error('Location selection processing error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+      setCurrentStep('location-selection');
+    }
+  };
+
+  const handleLocationDismiss = (): void => {
+    // User dismissed location selector, proceed with the fallback business data
+    console.log('User dismissed location selector, using fallback data');
+    if (businessData) {
+      setCurrentStep('results');
+    } else {
+      setError('No business data available. Please try again.');
+      setCurrentStep('upload');
+    }
+  };
+
   const handleRetryFromConfirmation = (): void => {
     setCurrentStep('upload');
     setExtractedTextData(null);
     setConfirmedBusinessName('');
+    setProcessingProgress(0);
+    setLocationOptions([]);
+  };
+
+  const handleRetryFromLocationSelection = (): void => {
+    setCurrentStep('upload');
+    setExtractedTextData(null);
+    setConfirmedBusinessName('');
+    setLocationOptions([]);
+    setBusinessData(null);
     setProcessingProgress(0);
   };
 
@@ -186,6 +280,7 @@ const BusinessListingGenerator: React.FC = () => {
     setBusinessData(null);
     setExtractedTextData(null);
     setConfirmedBusinessName('');
+    setLocationOptions([]);
     setError(null);
     setProcessingProgress(0);
   };
@@ -209,6 +304,18 @@ const BusinessListingGenerator: React.FC = () => {
         confidence={extractedTextData.confidence.businessName}
         onConfirm={handleBusinessNameConfirmation}
         onRetry={handleRetryFromConfirmation}
+      />
+    );
+  }
+
+  if (currentStep === 'location-selection' && locationOptions.length > 0) {
+    return (
+      <LocationSelector
+        options={locationOptions}
+        businessName={confirmedBusinessName || extractedTextData?.businessNames[0] || 'Unknown Business'}
+        onSelect={handleLocationSelection}
+        onDismiss={handleLocationDismiss}
+        onRetry={handleRetryFromLocationSelection}
       />
     );
   }

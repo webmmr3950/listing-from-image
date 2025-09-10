@@ -383,3 +383,11 @@ function extractBusinessNameFromQuery(query: string): string {
   console.log('📝 Extracted from words:', extracted);
   return extracted;
 }
+
+// Add this to your websearch.ts file  
+export async function getMultipleWebOptions(businessName: string): Promise<BusinessWebData[]> {
+  // This could search for multiple web results and return variations
+  // For now, just return single result in array format
+  const singleResult = await searchBusinessOnWeb(businessName);
+  return singleResult ? [singleResult] : [];
+}

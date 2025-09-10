@@ -1,17 +1,33 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/api/process-business/route.ts
-import { formatBusinessHours, searchBusiness } from '@/lib/places';
+import { formatBusinessHours, searchBusiness, getMultiplePlacesOptions } from '@/lib/places';
 import { BusinessData, ExtractedText } from '@/lib/types';
-import { searchBusinessOnWeb } from '@/lib/websearch';
+import { searchBusinessOnWeb, getMultipleWebOptions } from '@/lib/websearch';
 import { categorizeBusinessIndustry, estimateBusinessValue, ValuationFactors } from '@/lib/valuation';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+interface LocationOption {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+  rating?: number;
+  user_ratings_total?: number;
+  business_status?: string;
+  types?: string[];
+  geometry?: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { extractedText } = await request.json();
+    const { extractedText, selectedLocation } = await request.json();
 
     if (!extractedText) {
       return NextResponse.json(
@@ -20,14 +36,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('📊 Processing business with extracted text:', {
+      businessNames: extractedText.businessNames,
+      hasSelectedLocation: !!selectedLocation,
+      selectedLocationName: selectedLocation?.name
+    });
+
     const businessName = extractedText.businessNames[0] || 'Unknown Business';
     console.log(`🔍 Running comprehensive analysis for: "${businessName}"`);
 
-    // Run searches concurrently
-    const [placesData, webData] = await Promise.all([
-      searchBusiness(businessName, extractedText.addresses[0]).catch(err => {
-        console.error('Places API error:', err);
-        return null;
+    // If a specific location was selected, process only that one
+    if (selectedLocation) {
+      console.log(`🎯 Processing selected location: "${selectedLocation.name}"`);
+      return await processSingleLocation(extractedText, selectedLocation, businessName);
+    }
+
+    // Otherwise, get multiple options and check if disambiguation is needed
+    console.log('🔍 Searching for multiple location options...');
+    
+    const [placesOptions, webData] = await Promise.all([
+      getMultiplePlacesOptions(businessName, extractedText.addresses[0]).catch(err => {
+        console.error('Multiple places search error:', err);
+        return [];
       }),
       searchBusinessOnWeb(businessName).catch(err => {
         console.error('Web search error:', err);
@@ -35,38 +65,51 @@ export async function POST(request: NextRequest) {
       })
     ]);
 
-    // Generate comprehensive business data
-    const businessData = generateBusinessData(extractedText, placesData, webData);
-
-    // Generate business valuation
-    console.log('💰 Starting business valuation analysis...');
-    const valuationFactors = extractValuationFactors(businessData, placesData, webData, extractedText);
-    const valuation = estimateBusinessValue(valuationFactors);
-
-    // Add valuation to business data
-    businessData.valuation = valuation;
-
-    console.log('🎉 Analysis completed with valuation:', {
-      businessName: businessData.businessName,
-      industry: businessData.businessType,
-      estimatedValue: `$${valuation.estimatedValue.low.toLocaleString()} - $${valuation.estimatedValue.high.toLocaleString()}`,
-      confidence: valuation.confidence
+    console.log(`📍 Found ${placesOptions.length} location options from Places API`);
+    placesOptions.forEach((option, index) => {
+      console.log(`  Option ${index + 1}: ${option.name} - ${option.formatted_address}`);
     });
 
-    return NextResponse.json({
-      success: true,
-      businessData,
-      metadata: {
-        processed_at: new Date().toISOString(),
-        sources_used: [
-          placesData ? 'Places API' : null,
-          webData ? 'Web Search' : null,
-          'OCR',
-          'Valuation Model'
-        ].filter(Boolean),
-        confidence: placesData && webData ? 'High' : 'Medium'
-      }
-    });
+    // If multiple locations found, return them for user selection
+    if (placesOptions.length > 1) {
+      console.log('🔀 Multiple locations detected - returning options for user selection');
+      
+      const locationOptions: LocationOption[] = placesOptions.map(option => ({
+        place_id: option.place_id,
+        name: option.name,
+        formatted_address: option.formatted_address || 'Address not available',
+        rating: option.rating,
+        user_ratings_total: option.user_ratings_total,
+        business_status: option.business_status,
+        types: option.types,
+        geometry: option.geometry
+      }));
+
+      // Still generate primary business data from the first result as fallback
+      const primaryBusinessData = generateBusinessData(extractedText, placesOptions[0], webData);
+      const valuationFactors = extractValuationFactors(primaryBusinessData, placesOptions[0], webData, extractedText);
+      const valuation = estimateBusinessValue(valuationFactors);
+      primaryBusinessData.valuation = valuation;
+
+      return NextResponse.json({
+        success: true,
+        businessData: primaryBusinessData,
+        hasMultipleLocations: true,
+        locationOptions,
+        metadata: {
+          processed_at: new Date().toISOString(),
+          sources_used: ['Places API', webData ? 'Web Search' : null, 'OCR'].filter(Boolean),
+          confidence: 'Medium - Multiple locations found',
+          multipleLocationsCount: locationOptions.length
+        }
+      });
+    }
+
+    // Single location or no locations found - process normally
+    console.log('🎯 Single location detected or no locations found - processing normally');
+    const placesData = placesOptions[0] || null;
+    
+    return await processSingleLocation(extractedText, placesData, businessName, webData);
 
   } catch (error) {
     console.error('Process Business API Error:', error);
@@ -80,23 +123,80 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function processSingleLocation(
+  extractedText: ExtractedText, 
+  placesData: any, 
+  businessName: string, 
+  webData?: any
+) {
+  console.log(`🏢 Processing single location: "${placesData?.name || businessName}"`);
+  
+  // If webData not provided, fetch it
+  if (!webData) {
+    webData = await searchBusinessOnWeb(businessName).catch(err => {
+      console.error('Web search error:', err);
+      return null;
+    });
+  }
+
+  // Generate comprehensive business data
+  const businessData = generateBusinessData(extractedText, placesData, webData);
+
+  // Generate business valuation
+  console.log('💰 Starting business valuation analysis...');
+  const valuationFactors = extractValuationFactors(businessData, placesData, webData, extractedText);
+  const valuation = estimateBusinessValue(valuationFactors);
+
+  // Add valuation to business data
+  businessData.valuation = valuation;
+
+  console.log('🎉 Analysis completed with valuation:', {
+    businessName: businessData.businessName,
+    industry: businessData.businessType,
+    estimatedValue: `$${valuation.estimatedValue.low.toLocaleString()} - $${valuation.estimatedValue.high.toLocaleString()}`,
+    confidence: valuation.confidence
+  });
+
+  return NextResponse.json({
+    success: true,
+    businessData,
+    hasMultipleLocations: false,
+    metadata: {
+      processed_at: new Date().toISOString(),
+      sources_used: [
+        placesData ? 'Places API' : null,
+        webData ? 'Web Search' : null,
+        'OCR',
+        'Valuation Model'
+      ].filter(Boolean),
+      confidence: placesData && webData ? 'High' : 'Medium'
+    }
+  });
+}
+
 function generateBusinessData(
   extractedText: ExtractedText,
   placesData: any = null,
   webData: any = null
 ): BusinessData {
+  console.log('🏗️ Generating business data...');
+  console.log('   Places data available:', !!placesData);
+  console.log('   Web data available:', !!webData);
+  
   const businessName = placesData?.name || webData?.name || extractedText.businessNames[0] || 'Unknown Business';
+  console.log(`   Final business name: "${businessName}"`);
   
   // Use the new industry categorization
   const businessType = categorizeBusinessIndustry(
     placesData?.name || webData?.businessType || 'Business',
     placesData?.types
   );
+  console.log(`   Categorized business type: "${businessType}"`);
 
   // Generate comprehensive description
   const description = generateBusinessDescription(businessName, businessType, placesData, webData, extractedText);
 
-  return {
+  const businessData = {
     businessName,
     businessType,
     address: placesData?.formatted_address || webData?.address || extractedText.addresses[0] || 'Not Available',
@@ -114,6 +214,17 @@ function generateBusinessData(
       email: 'Not Available'
     }
   };
+
+  console.log('✅ Business data generated:', {
+    name: businessData.businessName,
+    type: businessData.businessType,
+    hasAddress: businessData.address !== 'Not Available',
+    hasPhone: businessData.phone !== 'Not Available',
+    hasWebsite: businessData.website !== 'Not Available',
+    hasRating: !!businessData.rating
+  });
+
+  return businessData;
 }
 
 function extractValuationFactors(
@@ -126,21 +237,27 @@ function extractValuationFactors(
 
   // Determine location quality from address and places data
   const locationQuality = assessLocationQuality(businessData.address, placesData);
+  console.log(`   Location quality: ${locationQuality}`);
 
   // Determine web presence quality
   const webPresenceQuality = assessWebPresenceQuality(webData, businessData.website);
+  console.log(`   Web presence quality: ${webPresenceQuality}`);
 
   // Estimate years in business
   const yearsInBusiness = estimateYearsInBusiness(placesData, webData);
+  console.log(`   Estimated years in business: ${yearsInBusiness || 'Unknown'}`);
 
   // Assess equipment quality from image analysis
   const equipmentQuality = assessEquipmentFromImage(extractedText);
+  console.log(`   Equipment quality: ${equipmentQuality}`);
 
   // Determine business size
   const businessSize = assessBusinessSize(placesData, webData, extractedText);
+  console.log(`   Business size: ${businessSize}`);
 
   // Determine operating hours pattern
   const operatingHours = assessOperatingHours(placesData);
+  console.log(`   Operating hours: ${operatingHours}`);
 
   return {
     businessType: businessData.businessType,
@@ -238,6 +355,8 @@ function generateBusinessDescription(
   webData: any,
   extractedText: ExtractedText
 ): string {
+  console.log(`📝 Generating description for ${businessName}...`);
+  
   const location = extractCityState(placesData?.formatted_address || webData?.address) || 'the local area';
   
   let description = `${businessName} is a ${businessType.toLowerCase()}`;
