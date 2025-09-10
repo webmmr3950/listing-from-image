@@ -495,11 +495,11 @@ function calculateSmartConfidence(detections: any[], businessNames: string[]): E
   const finalConfidence = Math.min(0.95, confidence);
   console.log(`   Final confidence: ${finalConfidence.toFixed(3)} (${confidenceDetails.join(', ')})`);
   
-  const getLevel = (score: number) => {
-    if (score > 0.7) return 'High';
-    if (score > 0.5) return 'Medium';
-    return 'Low';
-  };
+  const getLevel = (score: number): 'High' | 'Medium' | 'Low' => {
+  if (score > 0.7) return 'High';
+  if (score > 0.5) return 'Medium';
+  return 'Low';
+};
 
   const result = {
     businessName: getLevel(finalConfidence),
