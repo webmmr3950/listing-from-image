@@ -64,6 +64,7 @@ const BusinessListingGenerator: React.FC = () => {
   const [confirmedBusinessName, setConfirmedBusinessName] = useState<string>('');
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isManualInput, setIsManualInput] = useState<boolean>(false);
 
   const processingSteps: ProcessingStep[] = [
     { id: 'extract', title: 'Extracting text from image', progress: 33 },
@@ -71,14 +72,60 @@ const BusinessListingGenerator: React.FC = () => {
     { id: 'generate', title: 'Generating business listing', progress: 100 }
   ];
 
+  const manualProcessingSteps: ProcessingStep[] = [
+    { id: 'search', title: 'Searching Google Places & Web', progress: 50 },
+    { id: 'generate', title: 'Generating business listing', progress: 100 }
+  ];
+
   const handleFileSelect = (file: File | null): void => {
     setSelectedFile(file);
     setError(null);
+    setIsManualInput(false);
+  };
+
+  const handleManualSubmit = async (businessName: string): Promise<void> => {
+    console.log('Manual business name submitted:', businessName);
+    
+    setIsManualInput(true);
+    setCurrentStep('processing');
+    setProcessingProgress(10);
+    setError(null);
+
+    try {
+      // Create mock extracted text data for manual input
+      const mockExtractedText: ExtractedTextData = {
+        businessNames: [businessName],
+        addresses: [],
+        phoneNumbers: [],
+        websites: [],
+        emails: [],
+        otherText: [],
+        confidence: {
+          businessName: 'High',
+          address: 'Low',
+          phone: 'Low'
+        }
+      };
+
+      setExtractedTextData(mockExtractedText);
+      setConfirmedBusinessName(businessName);
+
+      // Start processing immediately (no confirmation needed for manual input)
+      await continueProcessing(mockExtractedText, businessName);
+
+    } catch (err) {
+      console.error('Manual processing error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+      setCurrentStep('upload');
+      setProcessingProgress(0);
+    }
   };
 
   const processImage = async (): Promise<void> => {
     if (!selectedFile) return;
 
+    setIsManualInput(false);
     setCurrentStep('processing');
     setProcessingProgress(0);
     setError(null);
@@ -177,7 +224,8 @@ const BusinessListingGenerator: React.FC = () => {
   ): Promise<void> => {
     try {
       // Step 2: Process business information
-      setProcessingProgress(66);
+      const targetProgress = isManualInput ? 50 : 66;
+      setProcessingProgress(targetProgress);
       
       const requestBody: any = {
         extractedText: {
@@ -233,7 +281,8 @@ const BusinessListingGenerator: React.FC = () => {
     console.log('User selected location:', selectedLocation.name, selectedLocation.formatted_address);
     
     setCurrentStep('processing');
-    setProcessingProgress(50); // Start at 50% since we already did text extraction
+    // Start at 50% for manual input, 66% for image input since we already did earlier processing
+    setProcessingProgress(isManualInput ? 50 : 66); 
     
     try {
       const businessName = confirmedBusinessName || extractedTextData.businessNames[0];
@@ -263,6 +312,7 @@ const BusinessListingGenerator: React.FC = () => {
     setConfirmedBusinessName('');
     setProcessingProgress(0);
     setLocationOptions([]);
+    setIsManualInput(false);
   };
 
   const handleRetryFromLocationSelection = (): void => {
@@ -272,6 +322,7 @@ const BusinessListingGenerator: React.FC = () => {
     setLocationOptions([]);
     setBusinessData(null);
     setProcessingProgress(0);
+    setIsManualInput(false);
   };
 
   const reset = (): void => {
@@ -283,6 +334,7 @@ const BusinessListingGenerator: React.FC = () => {
     setLocationOptions([]);
     setError(null);
     setProcessingProgress(0);
+    setIsManualInput(false);
   };
 
   // Render based on current step
@@ -292,6 +344,7 @@ const BusinessListingGenerator: React.FC = () => {
         selectedFile={selectedFile}
         onFileSelect={handleFileSelect}
         onProcess={processImage}
+        onManualSubmit={handleManualSubmit}
         error={error}
       />
     );
@@ -324,7 +377,7 @@ const BusinessListingGenerator: React.FC = () => {
     return (
       <ProcessingView
         progress={processingProgress}
-        steps={processingSteps}
+        steps={isManualInput ? manualProcessingSteps : processingSteps}
       />
     );
   }

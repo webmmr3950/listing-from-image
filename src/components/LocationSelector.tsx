@@ -168,7 +168,7 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({
               onClick={onRetry}
               className="flex items-center gap-2"
             >
-              Try Different Image
+              Try Again
             </Button>
             
             <div className="flex-1" />

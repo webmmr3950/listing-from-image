@@ -49,7 +49,8 @@ export type CurrentStep = 'upload' | 'processing' | 'results';
 export interface FileUploadProps {
   selectedFile: File | null;
   onFileSelect: (file: File | null) => void;
-  onProcess: () => void;
+  onProcess: () => Promise<void>;
+  onManualSubmit?: (businessName: string) => Promise<void>;
   error: string | null;
 }
 
