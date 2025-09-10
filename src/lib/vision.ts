@@ -3,7 +3,38 @@
 import vision from '@google-cloud/vision';
 import { ExtractedText } from './types';
 
-const client = new vision.ImageAnnotatorClient();
+// Initialize client with proper error handling
+function createVisionClient() {
+  // Check if we're in production/Vercel
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    console.log('Initializing Vision client for production...');
+    
+    // Verify all required environment variables exist
+    if (!process.env.GOOGLE_CLOUD_PROJECT_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error('Missing required Google Cloud environment variables');
+    }
+    
+    return new vision.ImageAnnotatorClient({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        type: 'service_account'
+      }
+    });
+  } else {
+    console.log('Initializing Vision client for local development...');
+    
+    // For local development, use the credentials file
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      throw new Error('GOOGLE_APPLICATION_CREDENTIALS not set for local development');
+    }
+    
+    return new vision.ImageAnnotatorClient();
+  }
+}
+
+const client = createVisionClient();
 
 export async function extractTextWithEnhancedVision(imageBuffer: Buffer): Promise<ExtractedText> {
   try {
