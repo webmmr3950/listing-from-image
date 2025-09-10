@@ -154,7 +154,7 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({
           
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t mt-6">
-            <Button 
+            {/* <Button 
               variant="outline" 
               onClick={onDismiss}
               className="flex items-center gap-2"
@@ -162,20 +162,14 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({
               <AlertCircle className="w-4 h-4" />
               None of these are correct
             </Button>
-            
+             */}
             <Button 
               variant="outline" 
               onClick={onRetry}
               className="flex items-center gap-2"
             >
-              Try Again
+              None of these are correct, Try Again
             </Button>
-            
-            <div className="flex-1" />
-            
-            <p className="text-xs text-gray-500 self-center">
-              Having trouble? The first option is usually the most relevant.
-            </p>
           </div>
         </CardContent>
       </Card>
